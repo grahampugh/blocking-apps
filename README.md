@@ -4,18 +4,9 @@ A native macOS app that lists running apps likely to block an unattended
 logout / shutdown / software update ("Later Tonight" install), with a reason
 for each.
 
-## Why a SwiftUI app?
+![Blocking Apps screenshot](./assets/Blocking%20Apps.png)
 
-- **Direct Accessibility API.** Uses `AXUIElementCreateApplication` and reads
-  window/attribute data in-process. This means **only one TCC grant is required: Accessibility**
-  ("Device Control and Data Access" on macOS 27+).
-- **Bounded per-app queries.** `AXUIElementSetMessagingTimeout` caps every
-  attribute read, so a wedged app times out fast (and is reported as *not
-  responding*).
-- **Native permission check.** `AXIsProcessTrusted()` is used to check for required permissions;
-  the UI shows an actionable banner and can open the settings pane.
-- **Stable TCC identity.** A signed, notarised `.app` bundle keeps its
-  Accessibility grant across launches.
+Clicking on the app icon brings that app into focus, so the app can also be used as a window manager.
 
 ## Detection tiers
 
@@ -41,6 +32,19 @@ app raises at quit time, which the HIGH tier catches.
 
 1. Terminal-like apps (e.g. Terminal, iTerm2, kitty) that have an open root session are detected.
 2. Blocking Apps itself is removed from the "open" list - it will never be a blocking app.
+
+## Why a SwiftUI app?
+
+- **Direct Accessibility API.** Uses `AXUIElementCreateApplication` and reads
+  window/attribute data in-process. This means **only one TCC grant is required: Accessibility**
+  ("Device Control and Data Access" on macOS 27+).
+- **Bounded per-app queries.** `AXUIElementSetMessagingTimeout` caps every
+  attribute read, so a wedged app times out fast (and is reported as *not
+  responding*).
+- **Native permission check.** `AXIsProcessTrusted()` is used to check for required permissions;
+  the UI shows an actionable banner and can open the settings pane.
+- **Stable TCC identity.** A signed, notarised `.app` bundle keeps its
+  Accessibility grant across launches.
 
 ## Requirements
 

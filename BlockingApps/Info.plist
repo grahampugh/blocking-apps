@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- This utility keeps no unsaved state, so let the OS terminate it
+	     instantly at logout/shutdown. Xcode merges the generated Info.plist
+	     keys (GENERATE_INFOPLIST_FILE=YES) on top of this base file. -->
+	<key>NSSupportsSuddenTermination</key>
+	<true/>
+</dict>
+</plist>

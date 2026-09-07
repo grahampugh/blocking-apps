@@ -1,0 +1,16 @@
+# Xcode / build artifacts
+.build/
+build/
+output/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+
+# macOS
+.DS_Store
+
+# Notarization scratch
+*.zip
+.app-submission-id
+.pkg-submission-id

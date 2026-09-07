@@ -4,25 +4,18 @@ A native macOS app that lists running apps likely to block an unattended
 logout / shutdown / software update ("Later Tonight" install), with a reason
 for each.
 
-It is the Swift reimplementation of the `check-blocking-apps.sh` script (in
-[osx-scripts](https://github.com/grahampugh/osx-scripts)). The shell version
-worked but was fragile: it spawned dozens of `osascript`/System Events calls
-per run, needed both Automation **and** Accessibility grants, and could hang on
-a single unresponsive app.
-
-## Why the rewrite is more robust
+## Why a SwiftUI app?
 
 - **Direct Accessibility API.** Uses `AXUIElementCreateApplication` and reads
-  window/attribute data in-process — no `osascript`, no System Events, no
-  Apple Events. This means **only one TCC grant is required: Accessibility**
+  window/attribute data in-process. This means **only one TCC grant is required: Accessibility**
   ("Device Control and Data Access" on macOS 27+).
 - **Bounded per-app queries.** `AXUIElementSetMessagingTimeout` caps every
   attribute read, so a wedged app times out fast (and is reported as *not
-  responding*) instead of stalling the whole scan.
-- **Native permission check.** `AXIsProcessTrusted()` replaces the shell
-  preflight; the UI shows an actionable banner and can open the settings pane.
+  responding*).
+- **Native permission check.** `AXIsProcessTrusted()` is used to check for required permissions;
+  the UI shows an actionable banner and can open the settings pane.
 - **Stable TCC identity.** A signed, notarised `.app` bundle keeps its
-  Accessibility grant across launches — a bare CLI binary does not.
+  Accessibility grant across launches.
 
 ## Detection tiers
 
@@ -40,9 +33,14 @@ There is no reliable, cross-app way to detect unsaved work via Accessibility:
 - Others (e.g. KeePassXC) are genuinely dirty but sanitise their AX title and
   expose no `AXModified` attribute.
 
-So the app only catches apps that advertise an `AXModified` attribute or an
+So Blocking Apps only catches apps that advertise an `AXModified` attribute or an
 "Edited"/"Modified" title suffix. The universal signal is the modal sheet an
 app raises at quit time, which the HIGH tier catches.
+
+### Bespoke detections
+
+1. Terminal-like apps (e.g. Terminal, iTerm2, kitty) that have an open root session are detected.
+2. Blocking Apps itself is removed from the "open" list - it will never be a blocking app.
 
 ## Requirements
 
@@ -66,17 +64,7 @@ make github   # publish a GitHub pre-release from built artifacts
 make clean
 ```
 
-Signing uses the **Graham Pugh** Developer ID identities (team `C96ALZKYH6`),
-matching the `plist-yaml-plist-swift` project. Configure a notarytool keychain
-profile once:
-
-```bash
-xcrun notarytool store-credentials graham-notary-profile-blockingapps \
-    --apple-id <apple-id> --team-id C96ALZKYH6 --password <app-specific-password>
-```
-
-Override any signing value on the command line, e.g.
-`make release NOTARY_PROFILE=other-profile`.
+Signing uses the **Graham Pugh** Developer ID identities.
 
 ## App icon
 

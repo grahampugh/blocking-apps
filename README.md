@@ -17,16 +17,36 @@ Clicking on the app icon brings that app into focus, so the app can also be used
 
 ### Unsaved-document detection is best-effort
 
-There is no reliable, cross-app way to detect unsaved work via Accessibility:
+There is no single, cross-app way to detect unsaved work via Accessibility, so
+Blocking Apps combines several signals:
 
-- Autosaving apps (TextEdit, Preview, Pages, Notes…) have no unsaved state.
-- Some apps (e.g. BBEdit) preserve unsaved text and never go "dirty".
-- Others (e.g. KeePassXC) are genuinely dirty but sanitise their AX title and
-  expose no `AXModified` attribute.
+- Apps that advertise an `AXModified` attribute or an "Edited"/"Modified"
+  title suffix.
+- Apple `NSDocument` apps (TextEdit, Keynote, Pages, Numbers, Preview…) expose
+  no `AXModified` and keep a clean window title; their edited state lives on a
+  title-bar element that is a direct child of the window. Two shapes are
+  detected **structurally** (so it is language- and version-independent):
+  a **"document actions" proxy button** (an `AXMenuButton`, as in TextEdit,
+  Pages, Numbers) whose `AXTitle` is non-empty while edited and empty when
+  clean; and a **document-status label** (an `AXStaticText` carrying a
+  description, as in Keynote) whose `AXValue` is non-empty while edited and
+  absent when clean. Matching structure rather than the literal word matters
+  because the label is localised and even varies per state (e.g. a German Pages
+  build shows "Bearbeitet" or "Vorgeschlagen").
 
-So Blocking Apps only catches apps that advertise an `AXModified` attribute or an
-"Edited"/"Modified" title suffix. The universal signal is the modal sheet an
-app raises at quit time, which the HIGH tier catches.
+  This indicator is flagged **HIGH**, but with an important caveat: it tracks
+  *changes since the last autosave*, not a definite shutdown block. A
+  never-saved document with content shows it and genuinely prompts to save on
+  quit (a real blocker); but an already-saved, autosaving document can show it
+  transiently between autosaves and would not actually block. No Accessibility
+  attribute cleanly separates the two — it depends on `NSDocument` /
+  Sudden-Termination internals — so the tool errs toward caution and labels the
+  reason "edited document(s) — may prompt to save on quit".
+
+Some apps still hide their dirty state from Accessibility entirely (e.g.
+KeePassXC exposes no `AXModified` and sanitises its title). The universal
+signal is the modal sheet an app raises at quit time, which the HIGH tier
+catches.
 
 ### Bespoke detections
 

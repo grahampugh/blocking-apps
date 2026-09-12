@@ -16,12 +16,13 @@ import Darwin
 ///              child session (e.g. `sudo` under a terminal), other login sessions.
 ///   * MEDIUM — has open standard windows but no detectable dirty state
 ///              (informational; not actively blocking).
-/// Unsaved-document detection is best-effort: only apps that expose an
-/// `AXModified` attribute or an "Edited"/"Modified" title suffix can be caught.
-/// Autosaving apps (TextEdit, Preview, …) have no unsaved state to find, and
-/// some apps (e.g. KeePassXC) hide their dirty state from Accessibility
-/// entirely. The universal signal remains the modal sheet an app raises at
-/// quit time.
+/// Unsaved-document detection is best-effort: apps that expose an
+/// `AXModified` attribute or an "Edited"/"Modified" title suffix are caught,
+/// and Apple `NSDocument` apps (TextEdit, Keynote, Pages, Preview, …) are
+/// caught via the title-bar "document actions" proxy button, whose `AXTitle`
+/// reads "Edited" while dirty. Some apps (e.g. KeePassXC) still hide their
+/// dirty state from Accessibility entirely. The universal signal remains the
+/// modal sheet an app raises at quit time.
 enum BlockerScanner {
 
     /// Apple's always-running shell pieces we never flag.
@@ -114,6 +115,7 @@ enum BlockerScanner {
 
         var modalCount = 0
         var unsavedCount = 0
+        var editedCount = 0
         var standardWindows = 0
 
         for window in windows {
@@ -134,7 +136,8 @@ enum BlockerScanner {
                 }.count
             }
 
-            // Best-effort unsaved detection on document windows.
+            // Explicit unsaved signal on document windows: some apps advertise
+            // AXModified or an "Edited"/"Modified" title suffix.
             if copyValue(window, "AXDocument" as CFString) != nil {
                 if copyBool(window, "AXModified" as CFString) == true {
                     unsavedCount += 1
@@ -143,7 +146,18 @@ enum BlockerScanner {
                     unsavedCount += 1
                 }
             }
+
+            // Title-bar "Edited" indicator used by Apple NSDocument apps
+            // (TextEdit, Keynote, Pages, Numbers, Preview…). This tracks changes
+            // since the last autosave, so it flags genuine never-saved blockers
+            // but can also appear transiently on a saved doc between autosaves —
+            // it means "edited, may prompt to save on quit", not a certain block.
+            // See windowHasEditedIndicator for the structural signal.
+            if windowHasEditedIndicator(window) {
+                editedCount += 1
+            }
         }
+
 
         var reasons: [String] = []
         var severity: Severity = .low
@@ -159,6 +173,14 @@ enum BlockerScanner {
         }
         if unsavedCount > 0 {
             reasons.append("\(unsavedCount) unsaved document(s)")
+            severity = .high
+        }
+        // Title-bar "Edited" indicator. Flagged HIGH because a never-saved
+        // document with content will prompt to save (blocking an unattended
+        // shutdown); note it may also show transiently on an autosaving,
+        // already-saved document, so the wording stays hedged.
+        if editedCount > 0 {
+            reasons.append("\(editedCount) edited document(s) — may prompt to save on quit")
             severity = .high
         }
         // Informational only: open windows but no hard-blocker signal.
@@ -194,6 +216,59 @@ enum BlockerScanner {
             return CFBooleanGetValue((value as! CFBoolean))
         }
         return (value as? NSNumber)?.boolValue
+    }
+
+    /// Detects the title-bar "Edited" indicator on Apple `NSDocument` apps,
+    /// which don't expose `AXModified` on the window and keep a clean window
+    /// title. The flag lives on a title-bar element that is a *direct child* of
+    /// the window, in one of two shapes (both empty/absent when clean):
+    ///
+    ///   * proxy button (TextEdit, Pages): an `AXMenuButton` — the "document
+    ///     actions" popup — whose `AXTitle` is non-empty while edited (e.g.
+    ///     "Edited", or "Bearbeitet"/"Vorgeschlagen" in a German build) and
+    ///     empty when clean.
+    ///   * status label (Keynote, Numbers): an `AXStaticText` carrying an
+    ///     `AXDescription` (e.g. "Document status") with a non-empty `AXValue`
+    ///     while edited; the element is removed entirely when clean.
+    ///
+    /// Caveat: this reflects "changes since the last autosave", not a definite
+    /// shutdown block. A never-saved document with content shows it and *will*
+    /// prompt to save on quit (a real blocker); but an already-saved,
+    /// autosaving document can also show it transiently between autosaves and
+    /// would not actually block. There is no Accessibility attribute that
+    /// cleanly separates the two (it depends on `NSDocument`/Sudden-Termination
+    /// internals), so callers should treat this as "edited, may prompt on quit".
+    ///
+    /// We key on structure rather than matching localised words, so this works
+    /// across languages and macOS versions. To avoid false positives we only
+    /// look at direct window children (toolbar menu buttons are nested deeper),
+    /// and for `AXStaticText` we require a non-empty description — the plain
+    /// filename label that also sits in the title bar has an empty description.
+    private static func windowHasEditedIndicator(_ window: AXUIElement) -> Bool {
+        guard let children = copyArray(window, kAXChildrenAttribute as CFString) else { return false }
+        for child in children {
+            switch copyString(child, kAXRoleAttribute as CFString) {
+            case "AXMenuButton":
+                // The document-actions proxy button. A non-empty title is the
+                // dirty marker; it is empty on a saved document.
+                if let title = copyString(child, kAXTitleAttribute as CFString),
+                   !title.isEmpty {
+                    return true
+                }
+            case "AXStaticText":
+                // The document-status label. Distinguished from the filename
+                // label (which has no description) by a non-empty description.
+                if let desc = copyString(child, kAXDescriptionAttribute as CFString),
+                   !desc.isEmpty,
+                   let value = copyString(child, kAXValueAttribute as CFString),
+                   !value.isEmpty, value != "—" {
+                    return true
+                }
+            default:
+                break
+            }
+        }
+        return false
     }
 
     // MARK: - Process tree / elevated sessions
